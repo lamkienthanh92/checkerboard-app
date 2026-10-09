@@ -156,7 +156,7 @@ function Falcon({
         x={cx}
         y={totalH + 13}
         textAnchor="middle"
-        fontSize={9}
+        fontSize={8.5}
         fontWeight={700}
         fill={warning ? "#b91c1c" : "#1f2937"}
       >
@@ -316,11 +316,11 @@ export default function DiagramView({
   ];
 
   // Layout
-  const FW = 34,
+  const FW = 44,
     FH_TOTAL = 10 + 4 + 60 + 13,
     FLABEL = 26,
     F_SLOT_H = FH_TOTAL + FLABEL;
-  const FSLOT = FW + 10; // horizontal spacing between adjacent falcons in a group
+  const FSLOT = FW + 16; // horizontal spacing between adjacent falcons in a group
   const CS = 4.5,
     CGAP = 1.4,
     PW = 12 * (CS + CGAP),
@@ -329,7 +329,7 @@ export default function DiagramView({
 
   // Y positions
   // Row 0: stock ladder (primary, secondary, tertiary...) — each level stacked vertically
-  const STOCK_ROW_H = F_SLOT_H + 16; // height of each stock row
+  const STOCK_ROW_H = F_SLOT_H + 36; // height of each stock row
   const getStockY = (level) => 48 + level * STOCK_ROW_H;
 
   // We'll compute max stock levels across all abs
@@ -338,8 +338,8 @@ export default function DiagramView({
     ...variableAbs.map((r) => (r.ladder ? r.ladder.stocks.length : 1))
   );
   const ROW_FALCONS = getStockY(maxLevels) + 16;
-  const ROW_PLATE1 = ROW_FALCONS + F_SLOT_H + 24;
-  const ROW_PLATE2 = ROW_PLATE1 + PH + 32;
+  const ROW_PLATE1 = ROW_FALCONS + F_SLOT_H + 44;
+  const ROW_PLATE2 = ROW_PLATE1 + PH + 40;
   const SVG_H = ROW_PLATE2 + PH + 44;
 
   // Build sections
@@ -377,7 +377,7 @@ export default function DiagramView({
   });
 
   const BAC_X = curX + 8;
-  const SVG_W = BAC_X + FW * 2 + 64 + MARGIN;
+  const SVG_W = BAC_X + FW * 2 + 130 + MARGIN;
 
   function makePlateColor(r) {
     return (row, col) => {
@@ -481,16 +481,14 @@ export default function DiagramView({
                           x1={stockX + FW / 2}
                           y1={getStockY(si - 1) + FH_TOTAL + FLABEL}
                           x2={stockX + FW / 2}
-                          y2={sy}
+                          y2={sy - 16}
                           stroke={sc}
                           markerId={`arr${si % STOCK_COLORS.length}`}
                           w={1.2}
                         />
                         <text
                           x={stockX + FW + 4}
-                          y={
-                            (getStockY(si - 1) + FH_TOTAL + FLABEL + sy) / 2 + 4
-                          }
+                          y={getStockY(si - 1) + FH_TOTAL + FLABEL + 14}
                           fontSize={7}
                           fill={sc}
                           fontWeight={600}
@@ -514,6 +512,7 @@ export default function DiagramView({
 
                     {/* Falcon icon */}
                     <Falcon
+                      w={FW}
                       x={stockX}
                       y={sy}
                       color={STOCK_LIGHTS[si % STOCK_LIGHTS.length]}
@@ -607,6 +606,7 @@ export default function DiagramView({
                 return (
                   <g key={i}>
                     <Falcon
+                      w={FW}
                       x={fx}
                       y={ROW_FALCONS}
                       color={fColor}
@@ -662,11 +662,14 @@ export default function DiagramView({
 
               {/* ── PLATE: AB ── */}
               <text
-                x={plateX}
-                y={ROW_PLATE1 - 9}
+                x={plateX + PW + 66}
+                y={ROW_PLATE1 + 10}
                 fontSize={8}
                 fontWeight={600}
                 fill="#374151"
+                stroke="#fff"
+                strokeWidth={3}
+                paintOrder="stroke"
               >
                 Plate — after drug loading
               </text>
@@ -684,29 +687,32 @@ export default function DiagramView({
               <rect
                 x={plateX + PW + 4}
                 y={ROW_PLATE1 + PH + 4}
-                width={36}
+                width={52}
                 height={14}
                 rx={4}
                 fill="#dcfce7"
               />
               <text
-                x={plateX + PW + 22}
+                x={plateX + PW + 30}
                 y={ROW_PLATE1 + PH + 14}
                 textAnchor="middle"
                 fontSize={8}
                 fontWeight={600}
                 fill="#15803d"
               >
-                + VK
+                + inoculum
               </text>
 
               {/* ── PLATE: after bac ── */}
               <text
-                x={plateX}
-                y={ROW_PLATE2 - 7}
+                x={plateX + PW + 12}
+                y={ROW_PLATE2 + 10}
                 fontSize={8}
                 fontWeight={600}
                 fill="#374151"
+                stroke="#fff"
+                strokeWidth={3}
+                paintOrder="stroke"
               >
                 Plate — after inoculum
               </text>
@@ -724,14 +730,17 @@ export default function DiagramView({
         {/* ═══ BACTERIA SECTION ═══ */}
         {(() => {
           const bx = BAC_X,
-            bx2 = bx + FW + 40;
+            bx2 = bx + FW + 70;
           const midY = getStockY(0) + FH_TOTAL / 2;
+          const FIX_DY = 22;
+          const arrowY1 =
+            getStockY(0) + FH_TOTAL + FLABEL + (fixedAbs.length ? FIX_DY + fixedAbs.length * 34 + 14 : 20);
           return (
             <g>
               <SectionBox
                 x={bx - 10}
                 y={getStockY(0) - 22}
-                w={FW * 2 + 60 + 10}
+                w={FW * 2 + 70 + 44}
                 h={SVG_H - getStockY(0) + 16}
                 color="#15803d"
                 label="Inoculum"
@@ -747,6 +756,7 @@ export default function DiagramView({
                 McFarland 0.5
               </text>
               <Falcon
+                      w={FW}
                 x={bx}
                 y={getStockY(0)}
                 color="#4ade80"
@@ -774,6 +784,7 @@ export default function DiagramView({
                 Working susp.
               </text>
               <Falcon
+                      w={FW}
                 x={bx2}
                 y={getStockY(0)}
                 color="#86efac"
@@ -798,8 +809,8 @@ export default function DiagramView({
                 <g>
                   <rect
                     x={bx - 2}
-                    y={getStockY(0) + FH_TOTAL + FLABEL}
-                    width={FW * 2 + 44}
+                    y={getStockY(0) + FH_TOTAL + FLABEL + FIX_DY}
+                    width={FW * 2 + 74}
                     height={fixedAbs.length * 34 + 14}
                     rx={6}
                     fill="#f5f3ff"
@@ -808,7 +819,7 @@ export default function DiagramView({
                   />
                   <text
                     x={bx + 4}
-                    y={getStockY(0) + FH_TOTAL + FLABEL + 12}
+                    y={getStockY(0) + FH_TOTAL + FLABEL + 12 + FIX_DY}
                     fontSize={8}
                     fontWeight={600}
                     fill="#7c3aed"
@@ -819,7 +830,7 @@ export default function DiagramView({
                     <g key={fa.id}>
                       <text
                         x={bx + 4}
-                        y={getStockY(0) + FH_TOTAL + FLABEL + 25 + fi * 32}
+                        y={getStockY(0) + FH_TOTAL + FLABEL + 25 + FIX_DY + fi * 32}
                         fontSize={8}
                         fontWeight={600}
                         fill="#5b21b6"
@@ -828,7 +839,7 @@ export default function DiagramView({
                       </text>
                       <text
                         x={bx + 4}
-                        y={getStockY(0) + FH_TOTAL + FLABEL + 36 + fi * 32}
+                        y={getStockY(0) + FH_TOTAL + FLABEL + 36 + FIX_DY + fi * 32}
                         fontSize={7.5}
                         fill="#6b7280"
                       >
@@ -846,7 +857,7 @@ export default function DiagramView({
                 <line
                   key={sec.r.id}
                   x1={bx2 + FW / 2}
-                  y1={getStockY(0) + FH_TOTAL + FLABEL}
+                  y1={arrowY1}
                   x2={sec.plateX + PW / 2}
                   y2={ROW_PLATE2 - 5}
                   stroke="#86efac"
