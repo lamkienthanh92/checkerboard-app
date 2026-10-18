@@ -95,15 +95,19 @@ test('working volume follows the number of plates (not the tube size)', () => {
   assert.ok(p2.abResults[0].powderUsedMg < p10.abResults[0].powderUsedMg);
 });
 
-test('meropenem needs a third stock level but not more', () => {
+test('meropenem needs only one stock below the primary (fewest levels), with round volumes', () => {
   const p = planExperiment(abs(), { ...DEFAULT_SETTINGS, numPlates: 10 });
   const l = p.abResults[0].ladder;
-  assert.equal(l.stocks.length, 3, `levels: ${l.stocks.length}`);
+  assert.equal(l.stocks.length, 2, `levels: ${l.stocks.length}`);
+  assert.equal(l.stocks[1].dilution, 100);
+  assert.equal(l.stocks[1].fromPrev_uL, 66);
   for (const s of l.stocks.slice(1)) {
     assert.ok(s.fromPrev_uL >= DEFAULT_SETTINGS.minVolUl - 1e-6);
   }
   const last = l.falcons[l.falcons.length - 1];
   assert.ok(last.volFromStock_uL >= 50);
+  // no tube takes more than 80% of its volume from a stock
+  for (const f of l.falcons.slice(1)) assert.ok(f.volFromStock_mL <= 0.8 * f.totalMl + 1e-9);
 });
 
 test('drug mass is conserved: more solvent does not cure a shortage', () => {

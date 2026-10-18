@@ -162,10 +162,10 @@ export default function AnalysisTab({ plan, colSeries, rowSeries, layout, reps, 
         <Field label="Replicate name">
           <input style={S.inp} value={rep.name} onChange={(e) => setReps((p) => p.map((r) => (r.id === rep.id ? { ...r, name: e.target.value } : r)))} />
         </Field>
-        <Field label="Blank OD (medium only)">
+        <Field label="Blank OD (medium only)" help="Absorbance of broth without bacteria. It is subtracted from every well so that growth is measured above the background of the plate and medium.">
           <input type="number" step={0.01} style={S.inp} value={call.blank} onChange={(e) => setCall((c) => ({ ...c, blank: +e.target.value }))} />
         </Field>
-        <Field label="No growth if inhibition ≥ (%)">
+        <Field label="No growth if inhibition ≥ (%)" help="A well counts as no growth when its signal is at least this far below the drug-free growth-control well. CLSI reads the lowest concentration with no visible growth; 90% is the default here. State the cut-off you used when you report FICI.">
           <input type="number" min={50} max={100} style={S.inp} value={call.inhibitionCut} onChange={(e) => setCall((c) => ({ ...c, inhibitionCut: +e.target.value }))} />
         </Field>
       </div>

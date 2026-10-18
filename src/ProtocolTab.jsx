@@ -1,14 +1,16 @@
 import { S, btn } from './ui.jsx';
-import { fmt, fmtConc } from './calc.js';
+import { fmt, fmtConc, planReservoirLoading } from './calc.js';
 import { download, planCsv } from './io.js';
+import { buildPlanPdf } from './pdfPlan.js';
 import { assignTubes, opentronsScript, worklist } from './robot.js';
 
-export default function ProtocolTab({ plan, cfg }) {
+export default function ProtocolTab({ plan, cfg, capacity }) {
   const titrated = plan.abResults.filter((r) => r.type === 'variable' && r.ladder);
   const fixed = plan.abResults.filter((r) => r.type === 'fixed');
   const blocked = plan.messages.some((m) => m.level === 'error');
   const canRobot = plan.colRes?.ladder && plan.rowRes?.ladder;
   const rack = canRobot ? assignTubes(plan, cfg) : null;
+  const rr = planReservoirLoading(plan, cfg);
   let n = 0;
   const num = () => ++n;
 
@@ -17,6 +19,7 @@ export default function ProtocolTab({ plan, cfg }) {
       <div className="np" style={S.card}>
         <div style={S.h}>Export</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button style={btn} onClick={() => download('checkerboard_plan.pdf', buildPlanPdf(plan, cfg, capacity).output('blob'), 'application/pdf')}>Detailed plan (PDF)</button>
           <button style={btn} onClick={() => window.print()}>Print protocol</button>
           <button style={btn} onClick={() => download('checkerboard_plan.csv', planCsv(plan), 'text/csv')}>Plan (CSV)</button>
           <button style={btn} disabled={!canRobot} onClick={() => download('checkerboard_worklist.csv', worklist(plan, cfg), 'text/csv')}>
@@ -96,6 +99,13 @@ export default function ProtocolTab({ plan, cfg }) {
             <li>☐ {plan.colRes?.name}: {fmt(plan.volAbPerWellEach, 1)} µL per well, one tube per column (1 → {plan.colRes ? plan.colRes.series.length : '—'}; last column drug-free).</li>
             <li>☐ {plan.rowRes?.name}: {fmt(plan.volAbPerWellEach, 1)} µL per well, one tube per row (A → {plan.rowRes ? String.fromCharCode(64 + plan.rowRes.series.length) : '—'}; last row drug-free).</li>
             <li>☐ Inoculum: {fmt(plan.volBacPerWell, 0)} µL per well, within the time limit of your reference standard.</li>
+            {rr && (
+              <li>
+                ☐ With 12-well reservoirs: pour each tube into its own well ({rr.col.name} {rr.col.pourMl} mL per well; {rr.row.name} {rr.row.pourMl} mL per well; one well of plain broth for the drug-free column and row);
+                12-channel, {rr.col.passes} passes for {rr.col.name}; tips 1–{rr.nR}, {rr.row.passes} passes for {rr.row.name}; inoculum last, {rr.inoc.passes} passes
+                ({rr.steps.multi} dispenses per plate instead of {rr.steps.single}).
+              </li>
+            )}
             <li>☐ Controls: sterility, drug-free growth{fixed.length ? ' (without the fixed drug)' : ''}, QC strain.</li>
           </ul>
         </div>

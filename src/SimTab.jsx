@@ -47,22 +47,22 @@ export default function SimTab({ plan, cfg }) {
         and are therefore not simulated.
       </div>
       <div style={S.grid(190)}>
-        <Field label="True interaction (FICI)">
+        <Field label="True interaction (FICI)" help="The interaction the simulated drugs really have. Additive is FICI 1. Because the assay reads two-fold steps, even a perfect plate reports a minimum FICI of 0.75 for an additive truth; the simulation shows what pipetting error adds on top of that.">
           <select style={S.inp} value={truth} onChange={(e) => setTruth(+e.target.value)}>
             <option value={0.5}>Synergy (0.5)</option>
             <option value={1}>Additive (1)</option>
             <option value={2}>Mild antagonism (2)</option>
           </select>
         </Field>
-        <Field label="Pipetting error model">
+        <Field label="Pipetting error model" help="Relative error of a pipetted volume V is a fixed part plus a part that grows as 1 / V, so small volumes are the least accurate. The presets multiply both parts to represent good, poor and very poor technique. The values are illustrative, not the specification of any pipette.">
           <select style={S.inp} value={preset} onChange={(e) => setPreset(+e.target.value)}>
             {PRESETS.map((p) => (<option key={p.k} value={p.k}>{p.label}</option>))}
           </select>
         </Field>
-        <Field label="Simulated plates">
+        <Field label="Simulated plates" help="More plates give a steadier estimate. With 2,000 plates the standard error of a proportion near 20% is about 0.9 percentage points.">
           <input type="number" min={200} step={500} style={S.inp} value={n} onChange={(e) => setN(Math.max(200, +e.target.value))} />
         </Field>
-        <Field label="Random seed">
+        <Field label="Random seed" help="Fixes the random numbers so the same settings give the same result. Every strategy sees the same true MICs, so differences between strategies come from preparation only.">
           <input type="number" style={S.inp} value={seed} onChange={(e) => setSeed(+e.target.value)} />
         </Field>
       </div>

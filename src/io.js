@@ -122,12 +122,30 @@ export function decodeShare(hash) {
 // ───────────────────────── browser helpers ─────────────────────────
 
 export function download(filename, text, type = 'text/plain') {
-  const url = URL.createObjectURL(new Blob([text], { type: `${type};charset=utf-8` }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  // Inside a claude.ai Artifact the page cannot start a download itself; the
+  // `downloads` capability asks the viewer instead (.py is not on its list, so it is saved as .txt).
+  const c = typeof window !== 'undefined' ? window.claude : null;
+  if (c && typeof c.use === 'function') {
+    c.use('downloads')
+      .then((d) => {
+        if (!d) return fallback();
+        return d
+          .save({ filename: filename.replace(/\.py$/, '.py.txt'), data: text })
+          .catch(() => undefined); // the viewer may decline
+      })
+      .catch(fallback);
+    return;
+  }
+  fallback();
+
+  function fallback() {
+    const url = URL.createObjectURL(text instanceof Blob ? text : new Blob([text], { type: `${type};charset=utf-8` }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 }
