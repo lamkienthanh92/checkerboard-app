@@ -15,8 +15,8 @@ export function buildPlanPdf(plan, cfg, capacity, today = new Date().toISOString
   let y = M;
   const broth = brothBreakdown(plan);
   const rr = planReservoirLoading(plan, cfg);
-  const fixed = plan.abResults.filter((r) => r.type === 'fixed');
-  const titrated = plan.abResults.filter((r) => r.type === 'variable' && r.ladder);
+  const fixed = plan.displayResults.filter((r) => r.type === 'fixed' && !(r.isPartner && r.coDissolved));
+  const titrated = plan.displayResults.filter((r) => r.type === 'variable' && r.ladder && !(r.isPartner && r.coDissolved));
 
   const need = (h) => { if (y + h > 285) { doc.addPage(); y = M; } };
   const h1 = (t) => { need(12); doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(17, 24, 39); doc.text(clean(t), M, y); y += 2; doc.setDrawColor(59, 130, 246); doc.setLineWidth(0.5); doc.line(M, y, W - M, y); y += 6; };
@@ -88,7 +88,7 @@ export function buildPlanPdf(plan, cfg, capacity, today = new Date().toISOString
   };
   const drawLadder = (r) => {
     const L = r.ladder, n = L.stocks.length;
-    const hgt = 72; need(hgt + 4);
+    const hgt = 76; need(hgt + 4);
     const top = y;
     txt(`${r.name}: how to make it`, M, top + 1, { size: 8.5, bold: true, align: 'left' });
     // vial
@@ -97,29 +97,31 @@ export function buildPlanPdf(plan, cfg, capacity, today = new Date().toISOString
     doc.setFillColor(156, 163, 175); doc.rect(vx - 3.6, top + 7.6, 7.2, 3, 'F');
     doc.setFillColor(209, 213, 219); doc.rect(vx - 4.4, top + 17, 8.8, 6.4, 'F');
     txt(`${r.powderMg} mg`, vx, top + 28.5, { size: 7, bold: true });
-    txt('powder', vx, top + 31.6, { size: 6, color: [107, 114, 128] });
+    txt(r.partner?.pre ? `+ ${fmt(r.partner.weighMg, 1)} mg ${r.partner.name.slice(0, 8)}` : 'powder', vx, top + 31.6, { size: 6, color: [107, 114, 128] });
     // stock tubes
     const sx0 = M + 38, sw = Math.min(30, (CW - 40) / n);
     L.stocks.forEach((s, k) => {
       const cx = sx0 + k * sw, col = COLS[k % COLS.length];
       arrowH(cx - sw + (k === 0 ? 14 : 10) , cx - 6, top + 17);
-      if (k === 0) txt(`+ ${fmt(r.dissolveVolMl, 2)} mL`, (vx + 5 + cx - 6) / 2 + 2, top + 13.5, { size: 6.2 });
+      if (k === 0) txt(r.partner?.pre ? `mix to ${fmt(r.dissolveVolMl, 2)} mL` : `+ ${fmt(r.dissolveVolMl, 2)} mL`, (vx + 5 + cx - 6) / 2 + 2, top + 13.5, { size: 6.2 });
       else {
         txt(`${fmt(s.fromPrev_uL, 1)} uL`, cx - sw / 2 - 1, top + 12.8, { size: 6.2 });
         txt(`+ ${fmt(s.camhb_mL * 1000, 0)} uL CAMHB`, cx - sw / 2 - 1, top + 15.6, { size: 5.6, color: [107, 114, 128] });
       }
       drawTube(cx, top + 8, 9, 24, col, 0.7, k === 0 ? 1 : Math.min(0.9, (s.fromPrev_uL / 1000) / s.volNeeded_mL + 0.08));
       txt(`${fmtConc(s.conc)}`, cx, top + 36, { size: 6.8, bold: true });
+      if (r.partner) txt(`+ ${fmtConc(s.partnerConc)} ${r.partner.name.slice(0, 10)}`, cx, top + 42.2, { size: 5.4, color: [124, 58, 237] });
       txt(k === 0 ? 'primary' : `${s.name.toLowerCase()} 1:${s.dilution}`, cx, top + 39.2, { size: 5.8, color: [107, 114, 128] });
     });
     // working tubes
     const nT = L.falcons.length, tw = Math.min(14, (CW - 4) / nT);
-    doc.setDrawColor(229, 231, 235); doc.setLineWidth(0.2); doc.line(M, top + 42, W - M, top + 42);
-    txt(`WORKING TUBES (ug/mL, 4x final); colour = stock used`, M, top + 46, { size: 6.5, bold: true, color: [107, 114, 128], align: 'left' });
+    doc.setDrawColor(229, 231, 235); doc.setLineWidth(0.2); doc.line(M, top + 44, W - M, top + 44);
+    txt(`WORKING TUBES (ug/mL, 4x final); colour = stock used`, M, top + 48, { size: 6.5, bold: true, color: [107, 114, 128], align: 'left' });
     L.falcons.forEach((f, i) => {
       const cx = M + 3 + tw * i + tw / 2, col = COLS[f.stockIdx % COLS.length];
-      drawTube(cx, top + 50, 6.5, 12, col, 0.85, Math.max(0.08, f.volFromStock_mL / f.totalMl));
-      txt(fmtConc(f.finalConc), cx, top + 65, { size: 6, bold: true });
+      drawTube(cx, top + 52, 6.5, 12, col, 0.85, Math.max(0.08, f.volFromStock_mL / f.totalMl));
+      txt(fmtConc(f.finalConc), cx, top + 67, { size: 6, bold: true });
+      if (r.partner) txt(fmtConc(f.partnerFinal), cx, top + 70.2, { size: 5.4, color: [124, 58, 237] });
     });
     y = top + hgt;
   };
@@ -164,7 +166,8 @@ export function buildPlanPdf(plan, cfg, capacity, today = new Date().toISOString
   h1('1. Materials to prepare');
   const dish = Number(cfg.inocDeadMl) || cfg.deadMl;
   table(['Item', 'Amount', 'Note'], [
-    ...plan.abResults.map((r) => [`${r.name} powder`, r.powderUsedMg != null ? `${fmt(r.powderUsedMg, 1)} mg used` : '-', `${r.powderMg} mg weighed, dissolved in ${r.dissolveVolMl} mL -> ${r.primaryStock ? fmtConc(r.primaryStock) : '-'} ug/mL`]),
+    ...plan.abResults.flatMap((r) => [[`${r.name} powder`, r.powderUsedMg != null ? `${fmt(r.powderUsedMg, 1)} mg used` : '-', `${r.powderMg} mg weighed, dissolved in ${r.dissolveVolMl} mL -> ${r.primaryStock ? fmtConc(r.primaryStock) : '-'} ug/mL`],
+      ...(r.partner ? [[`${r.partner.name} powder (partner of ${r.name}, ${r.partner.parts})`, r.partner.usedMg != null ? `${fmt(r.partner.usedMg, 1)} mg used` : '-', `${r.partner.weighMg != null ? fmt(r.partner.weighMg, 1) : '-'} mg weighed and dissolved on its own (pre-primary), then mixed with the ${r.name} pre-primary to make the Primary; concentrations are of ${r.name}`]] : [])]),
     ['CAMHB in total', `${fmt(Math.ceil(broth.total / 10) * 10, 0)} mL`, `computed ${fmt(broth.total, 1)} mL, rounded up to 10 mL`],
     ['  working tubes', `${fmt(broth.tubes, 1)} mL`, ''],
     ['  intermediate stocks', `${fmt(broth.stocks, 1)} mL`, ''],
@@ -204,19 +207,27 @@ export function buildPlanPdf(plan, cfg, capacity, today = new Date().toISOString
   // ---- stocks and tubes ----
   titrated.forEach((r, k) => {
     need(90);
-    h1(`${3 + k}. ${r.name}: stocks and working tubes`);
+    h1(`${3 + k}. ${r.name}${r.isPartner ? ` (partner of ${r.mainName}, separate stocks)` : ''}: stocks and working tubes`);
     drawLadder(r);
-    para(`Primary stock ${r.primaryStock ? fmtConc(r.primaryStock) : '-'} ug/mL (${r.powderMg} mg in ${r.dissolveVolMl} mL). ${r.axis === 'row' ? 'Tubes A, B, ... are used down the rows.' : 'Tubes 1, 2, ... are used across the columns.'}`);
+    para(`Primary stock ${r.primaryStock ? fmtConc(r.primaryStock) : '-'} ug/mL (${r.isPartner ? fmt(r.powderMg, 1) : r.powderMg} mg${r.isPartner ? ` of ${r.name}, potency ${r.purityPct}%,` : ''} in ${r.dissolveVolMl} mL${r.isPartner ? `, in its own tube; ratio ${r.mainName}:${r.name} ${r.ratioText}` : ''}). ${r.axis === 'row' ? 'Tubes A, B, ... are used down the rows.' : 'Tubes 1, 2, ... are used across the columns.'}`);
+    if (r.partner) {
+      if (r.partner.mode === 'separate') {
+        para(`Combination product (separate stocks): weigh ${fmt(r.partner.weighMg, 1)} mg ${r.partner.name} and dissolve it in ${r.dissolveVolMl} mL (${r.partner.primaryStock ? fmtConc(r.partner.primaryStock) : '-'} ug/mL), apart from the ${r.name}. Make every stock below twice with the same volumes, once for each drug, and give each working tube the same volume from the ${r.name} stock and from the matching ${r.partner.name} stock (CAMHB column already reduced). Concentrations are given for ${r.name}; ${r.partner.name} is ${fmt(r.partner.f * 100, 0)}% of each value (purple numbers in the diagram, last column of the tube table).`);
+      } else {
+        para(`Combination product (pre-primary stocks mixed into one Primary): ${r.partner.pre ? `weigh ${r.powderMg} mg ${r.name} and dissolve in ${fmt(r.partner.pre.mainVolMl, 2)} mL (${fmtConc(r.partner.pre.mainConc)} ug/mL); weigh ${fmt(r.partner.weighMg, 1)} mg ${r.partner.name} separately and dissolve in ${fmt(r.partner.pre.partVolMl, 2)} mL (${fmtConc(r.partner.pre.partConc)} ug/mL); mix the two to make ${fmt(r.partner.pre.totalMl, 2)} mL of Primary.` : `weigh ${fmt(r.partner.weighMg, 1)} mg ${r.partner.name} separately.`} Every stock and tube then carries both drugs; no extra pipetting. Concentrations are given for ${r.name}; ${r.partner.name} is ${fmt(r.partner.f * 100, 0)}% of each value (purple numbers in the diagram, last column of the tube table).`);
+      }
+    }
     const stocks = r.ladder.stocks.slice(1);
     if (stocks.length) {
       table(['Stock', 'Concentration (ug/mL)', 'Made from'], stocks.map((s) => [s.name, fmtConc(s.conc), `${fmt(s.fromPrev_uL, 1)} uL ${r.ladder.stocks[s.fromStockIdx].name} + ${fmt(s.camhb_mL * 1000, 0)} uL CAMHB`]), [2, 3, 7]);
     }
-    table(['Tube', 'Final in well', 'In tube (4x)', 'Take from stock', 'CAMHB', 'Total'], r.ladder.falcons.map((f) => [
+    table(['Tube', 'Final in well', 'In tube (4x)', 'Take from stock', 'CAMHB', 'Total', ...(r.partner ? [`${r.partner.name} in tube`] : [])], r.ladder.falcons.map((f) => [
       r.axis === 'row' ? String.fromCharCode(64 + f.falconIdx) : String(f.falconIdx),
       fmtConc(f.finalConc), fmtConc(f.concInFalcon),
       `${f.volFromStock_uL >= 900 ? fmt(f.volFromStock_mL, 2) + ' mL' : fmt(f.volFromStock_uL, 1) + ' uL'} ${f.stockName}`,
-      `${fmt(f.camhb_mL, 2)} mL`, `${fmt(f.totalMl, 1)} mL`,
-    ]), [1.2, 2, 2, 4, 2, 2]);
+      (r.isPartner ? 'in the ' + r.mainName + ' tube' : `${fmt(f.camhb_mL, 2)} mL`), `${fmt(f.totalMl, 1)} mL`,
+      ...(r.partner ? [fmtConc(f.partnerInFalcon)] : []),
+    ]), r.partner ? [1.1, 1.8, 1.8, 3.6, 1.8, 1.8, 2.4] : [1.2, 2, 2, 4, 2, 2]);
   });
 
   // ---- inoculum ----

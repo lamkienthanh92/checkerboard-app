@@ -1,3 +1,4 @@
+import { useState } from "react";
 // DiagramView.jsx — stock ladder (primary → secondary → tertiary → …), working tubes and plates
 
 function fmt(n, dec = 2) {
@@ -281,6 +282,31 @@ function SectionBox({ x, y, w, h, color, label }) {
   );
 }
 
+// Clickable overlay: opens the editor for what it covers.
+function Hot({ x, y, w, h, label, onClick, badge = true, icon = "✎" }) {
+  if (!onClick) return null;
+  const go = (e) => { e.stopPropagation(); onClick(); };
+  return (
+    <g
+      role="button"
+      tabIndex={0}
+      aria-label={label}
+      style={{ cursor: "pointer" }}
+      onClick={go}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(e); } }}
+    >
+      <title>{label}</title>
+      <rect x={x} y={y} width={w} height={h} rx={5} fill="transparent" />
+      {badge && (
+        <g transform={`translate(${x + w - 4},${y + 2})`}>
+          <circle r={7} fill="#fff" stroke="#6b7280" strokeWidth={0.8} />
+          <text textAnchor="middle" y={3.5} fontSize={8.5} fill="#374151">{icon}</text>
+        </g>
+      )}
+    </g>
+  );
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 export default function DiagramView({
   results,
@@ -292,11 +318,14 @@ export default function DiagramView({
   volBacPerWell,
   minVolUl,
   bufferPct,
+  onEdit,
 }) {
+  const [fit, setFit] = useState(true);
+  const [part, setPart] = useState(0);
   if (!results) return null;
   const { abResults } = results;
   const variableAbs = abResults.filter((r) => r.type === "variable");
-  const fixedAbs = abResults.filter((r) => r.type === "fixed");
+  const fixedAbs = results.displayResults.filter((r) => r.type === "fixed");
 
   const AB_COLORS = [
     "#f59e0b",
@@ -353,7 +382,9 @@ export default function DiagramView({
     const nStocks = ladder ? ladder.stocks.length : 1;
 
     // Stock chain: each stock below the previous, left-aligned
-    const stockX = curX; // x for all stocks in chain (vertically stacked)
+    const sepP = r.partner?.mode === "separate" && !!ladder;
+    const pStockX = curX; // parallel partner chain (separate stocks) sits left of the main chain
+    const stockX = curX + (sepP ? FW + 28 : 0); // x for all stocks in chain (vertically stacked)
 
     // Falcons start after the stock chain + gap
     const falconsStartX = stockX + FW + 36;
@@ -368,6 +399,8 @@ export default function DiagramView({
       color,
       dark,
       stockX,
+      pStockX,
+      sepP,
       falconsStartX,
       falconsEndX,
       plateX,
@@ -378,6 +411,10 @@ export default function DiagramView({
 
   const BAC_X = curX + 8;
   const SVG_W = BAC_X + FW * 2 + 130 + MARGIN;
+  const partSafe = part === "all" || part === "inoc" || sections[part] ? part : sections.length ? 0 : "all";
+  let vx0 = 0, vx1 = SVG_W;
+  if (partSafe === "inoc") { vx0 = BAC_X - 16; vx1 = SVG_W; }
+  else if (partSafe !== "all") { const s = sections[partSafe]; vx0 = (s.sepP ? s.pStockX : s.stockX) - 34; vx1 = s.sectionRight + 4; }
 
   function makePlateColor(r) {
     return (row, col) => {
@@ -408,18 +445,42 @@ export default function DiagramView({
         padding: "16px 20px",
       }}
     >
-      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 2 }}>
-        Dilution and plate-loading diagram
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 2 }}>
+        <div style={{ fontWeight: 700, fontSize: 15, flex: "1 1 auto" }}>
+          Dilution and plate-loading diagram
+        </div>
+        {onEdit && [
+          ["➕", "Add antibiotic", "add"],
+          ["🧪", "Chemical plan", "summary"],
+          ["📋", "Protocol & export", "protocol"],
+          ["📈", "FICI analysis", "analysis"],
+        ].map(([ic, lb, k]) => (
+          <button key={k} type="button" title={lb} aria-label={lb} onClick={() => onEdit(k)} style={{ border: "1px solid #d1d5db", background: "#fff", borderRadius: 8, padding: "3px 9px", fontSize: 12, cursor: "pointer", color: "#374151" }}>
+            {ic} <span>{lb}</span>
+          </button>
+        ))}
       </div>
       <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 14 }}>
         Stock ladder: Primary → Secondary → Tertiary… · Each working tube is{" "}
         made <b>independently</b> from its stock
       </div>
 
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
+        {[...sections.map((s, i) => [i, s.r.name + (s.r.partner ? " + " + s.r.partner.name : "")]), ["inoc", "Inoculum"], ["all", "All (small)"]].map(([k, lb]) => (
+          <button key={k} type="button" aria-pressed={part === k} onClick={() => setPart(k)} style={{ border: "1px solid", borderColor: part === k ? "#3b82f6" : "#d1d5db", background: part === k ? "#eff6ff" : "#fff", color: part === k ? "#1d4ed8" : "#374151", fontWeight: part === k ? 600 : 400, borderRadius: 8, padding: "3px 10px", fontSize: 12, cursor: "pointer" }}>
+            {lb}
+          </button>
+        ))}
+        <span style={{ flex: 1 }} />
+        <button type="button" onClick={() => setFit((f) => !f)} style={{ border: "1px solid #d1d5db", background: "#fff", borderRadius: 8, padding: "3px 10px", fontSize: 12, cursor: "pointer", color: "#374151" }}>
+          {fit ? "🔍 Actual size (scroll)" : "⤢ Fit to screen"}
+        </button>
+      </div>
       <svg
-        width={SVG_W}
-        height={SVG_H}
-        style={{ display: "block", minWidth: 500 }}
+        viewBox={`${vx0} 0 ${vx1 - vx0} ${SVG_H}`}
+        width={fit ? "100%" : vx1 - vx0}
+        height={fit ? undefined : SVG_H}
+        style={{ display: "block", minWidth: fit ? 0 : 300, maxWidth: fit ? "100%" : "none", height: fit ? "auto" : undefined }}
       >
         <defs>
           {[
@@ -443,14 +504,14 @@ export default function DiagramView({
 
         {/* ═══ ANTIBIOTIC SECTIONS ═══ */}
         {sections.map((sec) => {
-          const { r, color, dark, stockX, falconsStartX, falconsEndX, plateX } =
+          const { r, color, dark, stockX, pStockX, sepP, falconsStartX, falconsEndX, plateX } =
             sec;
           const ladder = r.ladder;
           if (!ladder) return null;
           const nF = r.series?.length || 0;
           const nStocks = ladder.stocks.length;
 
-          const boxX = stockX - 10;
+          const boxX = (sepP ? pStockX : stockX) - 10;
           const boxW = sec.sectionRight - boxX - MARGIN + 10;
 
           return (
@@ -461,7 +522,7 @@ export default function DiagramView({
                 w={boxW}
                 h={SVG_H - getStockY(0) + 16}
                 color={color}
-                label={`${r.name}  ${r.axis === "row" ? "↕ rows" : "↔ columns"}`}
+                label={`${r.name}${r.partner ? ` + ${r.partner.name}` : ""}  ${r.axis === "row" ? "↕ rows" : "↔ columns"}`}
               />
 
               {/* ── STOCK CHAIN (vertical) ── */}
@@ -530,16 +591,22 @@ export default function DiagramView({
                       lines={
                         si === 0
                           ? [
-                              `${r.powderMg}mg powder`,
-                              `${r.dissolveVolMl}mL solvent`,
+                              ...(r.partner?.pre ? [`${r.powderMg}mg+${fmt(r.partner.weighMg, 1)}mg`, `mix ${fmt(r.partner.pre.mainVolMl, 1)}+${fmt(r.partner.pre.partVolMl, 1)}mL`, `${r.partner.name.slice(0, 7)} pre-primary`] : [`${r.powderMg}mg powder`, `${r.dissolveVolMl}mL solvent`]),
                             ]
                           : [
                               `${fmt(s.fromPrev_uL, 1)}µL prev`,
                               `+${fmt(s.camhb_mL * 1000, 1)}µL CAM`,
+                              ...(r.partner && !sepP ? [`+${fmt(s.partnerConc)} ${r.partner.name.slice(0, 6)}`] : []),
                             ]
                       }
                     />
 
+                    {si > 0 && (
+                      <Hot x={stockX - 2} y={sy - 12} w={FW + 4} h={FH_TOTAL + FLABEL + 12} label={`${s.name} stock: details`} icon="⚗️" onClick={onEdit && (() => onEdit("stocks"))} />
+                    )}
+                    {si === 0 && (
+                      <Hot x={stockX - 2} y={sy - 12} w={FW + 4} h={FH_TOTAL + FLABEL + 12} label={`Edit ${r.name}`} onClick={onEdit && (() => onEdit("abs", r.id))} />
+                    )}
                     {/* Horizontal arrows from THIS stock → falcons that use it */}
                     {ladder.falcons
                       .filter((f) => f.stockIdx === si)
@@ -570,6 +637,35 @@ export default function DiagramView({
                 );
               })}
 
+              {/* ── PARTNER STOCK CHAIN (separate parallel stocks) ── */}
+              {sepP && (
+                <g>
+                  <text x={pStockX + FW / 2} y={getStockY(0) - 14} textAnchor="middle" fontSize={7.5} fontWeight={700} fill="#7c3aed">
+                    {r.partner.name.slice(0, 14)} stocks
+                  </text>
+                  {ladder.stocks.map((s, si) => {
+                    const sy = getStockY(si);
+                    return (
+                      <g key={"p" + si}>
+                        {si > 0 && (
+                          <Arr x1={pStockX + FW / 2} y1={getStockY(si - 1) + FH_TOTAL + FLABEL} x2={pStockX + FW / 2} y2={sy - 16} stroke="#7c3aed" markerId={`arr${si % STOCK_COLORS.length}`} w={1.2} />
+                        )}
+                        <Falcon
+                          w={FW}
+                          x={pStockX}
+                          y={sy}
+                          color="#ede9fe"
+                          capColor="#7c3aed"
+                          label={`${fmt(s.partnerConc)} µg/mL`}
+                          sublabel={si === 0 ? `${fmt(r.partner.weighMg, 1)}mg/${r.dissolveVolMl}mL` : `${fmt(s.fromPrev_uL, 1)}µL+${fmt(s.camhb_mL * 1000, 1)}µL`}
+                          lines={si === 0 ? [`${fmt(r.partner.weighMg, 1)}mg powder`, `${r.dissolveVolMl}mL solvent`] : [`${fmt(s.fromPrev_uL, 1)}µL prev`, `+${fmt(s.camhb_mL * 1000, 1)}µL CAM`]}
+                        />
+                      </g>
+                    );
+                  })}
+                </g>
+              )}
+
               {/* ── FALCON ROW LABEL ── */}
               <text
                 x={falconsStartX}
@@ -580,6 +676,7 @@ export default function DiagramView({
               >
                 {nF} tubes × {fmt(ladder.workVolMl, 1)} mL — each made independently
               </text>
+              <Hot x={falconsStartX - 2} y={ROW_FALCONS - 18} w={nF * FSLOT} h={FH_TOTAL + FLABEL + 18} label="Working tubes: stocks and volumes" icon="⚗️" onClick={onEdit && (() => onEdit("stocks"))} />
 
               {/* ── INDIVIDUAL FALCONS ── */}
               {ladder.falcons.map((f, i) => {
@@ -644,6 +741,11 @@ export default function DiagramView({
                     >
                       {r.axis === "row" ? String.fromCharCode(65 + i) : i + 1}
                     </text>
+                    {r.partner && (
+                      <text x={fx + FW / 2} y={ROW_FALCONS + FH_TOTAL + FLABEL + 24} textAnchor="middle" fontSize={6.2} fill="#7c3aed">
+                        {sepP ? `+${fmt(f.partnerDrawMl * 1000, 1)}µL ${r.partner.name.slice(0, 5)}` : `+${fmt(f.partnerInFalcon, 3)} ${r.partner.name.slice(0, 5)}`}
+                      </text>
+                    )}
                     {/* arrow to plate */}
                     <line
                       x1={fx + FW / 2}
@@ -674,6 +776,7 @@ export default function DiagramView({
                 Plate — after drug loading
               </text>
               <Plate x={plateX} y={ROW_PLATE1} colorFn={makePlateColor(r)} />
+              <Hot x={plateX - 5} y={ROW_PLATE1 - 7} w={PW + 10} h={PH + 12} label="Edit plate and batch" onClick={onEdit && (() => onEdit("batch"))} />
 
               <line
                 x1={plateX + PW / 2}
@@ -716,6 +819,7 @@ export default function DiagramView({
               >
                 Plate — after inoculum
               </text>
+              <Hot x={plateX - 5} y={ROW_PLATE2 - 7} w={PW + 10} h={PH + 12} label="Plate layout and FICI analysis" icon="📈" onClick={onEdit && (() => onEdit("analysis"))} />
               <Plate
                 x={plateX}
                 y={ROW_PLATE2}
@@ -764,6 +868,7 @@ export default function DiagramView({
                 sublabel="stock"
                 lines={["McFarland 0.5", "stock"]}
               />
+              <Hot x={bx - 4} y={getStockY(0) - 14} w={FW + 8} h={FH_TOTAL + FLABEL + 14} label="Edit inoculum" onClick={onEdit && (() => onEdit("inocset"))} />
               <Arr
                 x1={bx + FW}
                 y1={midY}
@@ -826,6 +931,7 @@ export default function DiagramView({
                   >
                     Fixed drug (added to inoculum)
                   </text>
+                  <Hot x={bx - 2} y={getStockY(0) + FH_TOTAL + FLABEL + FIX_DY} w={FW * 2 + 74} h={fixedAbs.length * 34 + 14} label="Edit fixed drug" onClick={onEdit && (() => onEdit("abs", fixedAbs[0].isPartner ? fixedAbs[0].mainId : fixedAbs[0].id))} />
                   {fixedAbs.map((fa, fi) => (
                     <g key={fa.id}>
                       <text
@@ -835,7 +941,7 @@ export default function DiagramView({
                         fontWeight={600}
                         fill="#5b21b6"
                       >
-                        {fa.name}
+                        {fa.name}{fa.isPartner ? ` (partner of ${fa.mainName})` : ""}
                       </text>
                       <text
                         x={bx + 4}
@@ -843,11 +949,9 @@ export default function DiagramView({
                         fontSize={7.5}
                         fill="#6b7280"
                       >
-                        {fa.volNeededFromPrimaryMl
-                          ? fmt(fa.volNeededFromPrimaryMl * 1000, 1)
-                          : "—"}
-                        µL ({fmt(fa.primaryStock)} µg/mL) → {fmt(fa.finalConc)}{" "}
-                        µg/mL
+                        {fa.isPartner && fa.coDissolved
+                          ? `${fmt(fa.powderMg, 1)} mg, same solution & draw → ${fmt(fa.finalConc)} µg/mL`
+                          : `${fa.volNeededFromPrimaryMl ? fmt(fa.volNeededFromPrimaryMl * 1000, 1) : "—"} µL (${fmt(fa.primaryStock)} µg/mL) → ${fmt(fa.finalConc)} µg/mL`}
                       </text>
                     </g>
                   ))}
@@ -992,7 +1096,7 @@ export default function DiagramView({
                 </div>
               ))}
               <div style={{ marginTop: 4 }}>
-                {sec.r.series?.length} tubes × <b>{fmt(sec.r.ladder.workVolMl, 1)} mL</b> · Range:{" "}
+                {sec.r.series?.length} tubes × <b>{fmt(sec.r.workVolMl ?? sec.r.ladder?.workVolMl, 1)} mL</b> · Range:{" "}
                 <b>
                   {sec.r.series?.[sec.r.series.length - 1]} →{" "}
                   {sec.r.series?.[0]} µg/mL

@@ -1,4 +1,4 @@
-// Verification tests: every number in Table 1 and Table 2 of the manuscript is
+// Verification tests: every number in Table 1 and Table S1 of the manuscript is
 // re-derived here from the formulas of Appendix A, independently of the app code,
 // and compared with what the app returns.
 import test from 'node:test';
@@ -95,7 +95,7 @@ test('A.9 inhibition fraction is relative to the growth control', () => {
   near(inh[0][0], 0.9, 1e-12, 'inhibition'); near(inh[1][1], 0, 1e-12, 'no inhibition');
 });
 
-// ---------- Table 2: reproduce the simulation ----------
+// ---------- Table S1: reproduce the simulation ----------
 const T2 = [
   // [scale, key, median, q1, q3, sd, pSyn]
   [0, 'perfect', 0.75, 0.625, 1.0, 0.313, 0.0],
@@ -103,7 +103,7 @@ const T2 = [
   [10, 'ladder', 0.75, 0.625, 0.75, 0.332, 0.0215], [10, 'direct', 0.75, 0.563, 1.0, 0.343, 0.027], [10, 'serial', 0.75, 0.625, 1.0, 0.338, 0.014],
   [30, 'ladder', 0.625, 0.508, 0.75, 0.469, 0.196], [30, 'direct', 0.563, 0.504, 0.75, 0.505, 0.233], [30, 'serial', 0.625, 0.508, 0.75, 0.410, 0.130],
 ];
-test('Table 2 is reproduced exactly (n = 2000, seed 12345, additive truth)', () => {
+test('Table S1 (simulation) is reproduced exactly (n = 2000, seed 12345, additive truth)', () => {
   for (const scale of [1, 10, 30]) {
     const o = { n: 2000, trueFici: 1, seed: 12345, cvFloor: 0.003 * scale, cvSlope: 0.2 * scale };
     const res = simulateFici(plan, DEFAULT_SETTINGS, o);
@@ -250,4 +250,140 @@ test('inoculum vessel dead volume enlarges the suspension and keeps the concentr
   near(b.bacVolMl - a.bacVolMl, 9.5, 0.11, 'extra volume');
   near(b.volMcFarlandMl / b.bacVolMl, a.volMcFarlandMl / a.bacVolMl, 1e-9, 'McFarland fraction');
   assert.ok(b.camhbForBacMl > a.camhbForBacMl);
+});
+
+
+// ---------- Combination products with a partner at a fixed ratio ----------
+test('Partner at a fixed ratio: co-dissolved powder, share of each concentration', () => {
+  const abs = [
+    { id: 1, name: 'Ampicillin', powderMg: 25.6, dissolveVolMl: 5, purityPct: 100, micMin: 0.5, micMax: 64, fixed: false, axis: 'column', partnerName: 'Sulbactam', partnerMainParts: 2, partnerParts: 1, partnerPurityPct: 100 },
+    { id: 2, name: 'Colistin', powderMg: 1.28, dissolveVolMl: 20, purityPct: 100, micMin: 0.0625, micMax: 2, fixed: false, axis: 'row' },
+  ];
+  const p = planExperiment(abs, { ...DEFAULT_SETTINGS, numPlates: 5 });
+  const r = p.abResults[0];
+  near(r.partner.f, 0.5, 1e-12, 'f');
+  near(r.partner.weighMg, 12.8, 1e-9, 'sulbactam to weigh (mg)');
+  near(r.ladder.falcons[0].partnerFinal, r.ladder.falcons[0].finalConc / 2, 1e-9, 'partner final');
+  near(r.ladder.falcons[0].partnerInFalcon, r.ladder.falcons[0].concInFalcon / 2, 1e-9, 'partner in tube');
+  near(r.partner.usedMg, r.powderUsedMg / 2, 1e-9, 'partner powder used');
+  assert.equal(p.abResults[1].partner, undefined);
+});
+
+test('Partner potency scales the powder to weigh; ratio 1:19 gives 19 parts', () => {
+  const abs = [
+    { id: 1, name: 'Trimethoprim', powderMg: 10, dissolveVolMl: 5, purityPct: 100, micMin: 0.25, micMax: 8, fixed: false, axis: 'column', partnerName: 'Sulfamethoxazole', partnerMainParts: 1, partnerParts: 19, partnerPurityPct: 95 },
+    { id: 2, name: 'Colistin', powderMg: 1.28, dissolveVolMl: 20, purityPct: 100, micMin: 0.0625, micMax: 2, fixed: false, axis: 'row' },
+  ];
+  const r = planExperiment(abs, { ...DEFAULT_SETTINGS, numPlates: 2 }).abResults[0];
+  near(r.partner.weighMg, (10 * 19) / 0.95, 1e-6, 'partner powder with 95% potency');
+});
+
+test('Fixed drug with a ratio partner reports the partner concentration in the well', () => {
+  const abs = [
+    { id: 1, name: 'Meropenem', powderMg: 25.6, dissolveVolMl: 5, purityPct: 100, micMin: 0.125, micMax: 128, fixed: false, axis: 'column' },
+    { id: 2, name: 'Colistin', powderMg: 1.28, dissolveVolMl: 20, purityPct: 100, micMin: 0.03125, micMax: 2, fixed: false, axis: 'row' },
+    { id: 3, name: 'Ampicillin', powderMg: 25.6, dissolveVolMl: 5, purityPct: 100, fixed: true, fixedConc: 8, axis: 'fixed', partnerName: 'Sulbactam', partnerMainParts: 2, partnerParts: 1, partnerPurityPct: 100 },
+  ];
+  const f = planExperiment(abs, { ...DEFAULT_SETTINGS, numPlates: 10 }).abResults[2];
+  near(f.partnerFinalConc, 4, 1e-9, 'sulbactam in the well (ug/mL)');
+  near(f.partner.weighMg, 12.8, 1e-9, 'sulbactam to weigh (mg)');
+  near(f.volNeededFromPrimaryMl * 1000, 361.6, 0.1, 'primary volume is unchanged by the partner');
+});
+
+test('Old saved plans without partner fields still plan unchanged', () => {
+  const abs = [
+    { id: 1, name: 'Meropenem', powderMg: 25.6, dissolveVolMl: 5, purityPct: 100, micMin: 0.125, micMax: 128, fixed: false, axis: 'column' },
+    { id: 2, name: 'Colistin', powderMg: 1.28, dissolveVolMl: 20, purityPct: 100, micMin: 0.03125, micMax: 2, fixed: false, axis: 'row' },
+  ];
+  const p = planExperiment(abs, { ...DEFAULT_SETTINGS, numPlates: 10 });
+  assert.ok(p.abResults.every((r) => r.partner === undefined));
+});
+
+test('Separate parallel stocks: partner takes the same volume, broth shrinks, ladder limits each draw to 40%', () => {
+  const mk = (mode) => [
+    { id: 1, name: 'Ampicillin', powderMg: 25.6, dissolveVolMl: 5, purityPct: 100, micMin: 0.5, micMax: 64, fixed: false, axis: 'column', partnerName: 'Sulbactam', partnerMainParts: 2, partnerParts: 1, partnerPurityPct: 100, partnerMode: mode },
+    { id: 2, name: 'Colistin', powderMg: 1.28, dissolveVolMl: 20, purityPct: 100, micMin: 0.0625, micMax: 2, fixed: false, axis: 'row' },
+  ];
+  const sep = planExperiment(mk('separate'), { ...DEFAULT_SETTINGS, numPlates: 5 }).abResults[0];
+  const tog = planExperiment(mk('together'), { ...DEFAULT_SETTINGS, numPlates: 5 }).abResults[0];
+  assert.equal(sep.partner.mode, 'separate');
+  near(sep.partner.primaryStock, sep.primaryStock / 2, 1e-9, 'partner primary stock');
+  sep.ladder.falcons.forEach((f) => {
+    near(f.partnerDrawMl, f.volFromStock_mL, 1e-12, 'same volume from the partner stock');
+    near(f.camhb_mL, f.totalMl - 2 * f.volFromStock_mL, 1e-9, 'broth');
+    assert.ok(f.camhb_mL >= -1e-9, 'no negative broth');
+    assert.ok(f.volFromStock_mL <= 0.4 * f.totalMl + 1e-9, 'each draw at most 40% of the tube');
+  });
+  tog.ladder.falcons.forEach((f) => near(f.camhb_mL, f.totalMl - f.volFromStock_mL, 1e-9, 'together: broth'));
+});
+
+test('Partner is a drug in its own right in displayResults (together and separate)', async () => {
+  
+  const base = (mode) => [
+    { id: 1, name: 'Ampicillin', powderMg: 25.6, dissolveVolMl: 5, purityPct: 100, micMin: 0.5, micMax: 64, fixed: false, axis: 'column', partnerName: 'Sulbactam', partnerMainParts: 2, partnerParts: 1, partnerPurityPct: 95, partnerMode: mode },
+    { id: 2, name: 'Gentamicin', powderMg: 10, dissolveVolMl: 5, purityPct: 100, micMin: 0.25, micMax: 8, fixed: false, axis: 'row' },
+  ];
+  for (const mode of ['together', 'separate']) {
+    const p = planExperiment(base(mode), { ...DEFAULT_SETTINGS, numPlates: 2, stockScheme: "auto" });
+    assert.equal(p.displayResults.length, 3);
+    const [m, q] = p.displayResults;
+    assert.equal(q.isPartner, true);
+    assert.equal(q.name, 'Sulbactam');
+    assert.equal(q.coDissolved, mode === 'together');
+    near(q.powderMg, (25.6 * 0.5) / 0.95, 1e-3, 'partner weigh');
+    near(q.primaryStock, m.primaryStock / 2, 1e-9, 'partner primary stock');
+    q.ladder.falcons.forEach((f, i) => near(f.concInFalcon, m.ladder.falcons[i].concInFalcon / 2, 1e-9, 'tube conc'));
+    q.ladder.stocks.forEach((s, i) => near(s.conc, m.ladder.stocks[i].conc / 2, 1e-9, 'stock conc'));
+    assert.equal(p.abResults.length, 2); // the partner never becomes a plate axis
+  }
+});
+
+// ---------- Pre-primary stocks (partner dissolved separately, then mixed into the Primary) ----------
+test('Pre-primary: mass balance, volumes and concentrations of the mixed Primary', () => {
+  for (const split of [undefined, 25, 50, 80]) {
+    const abs = [
+      { id: 1, name: 'Ceftazidime', powderMg: 40, dissolveVolMl: 10, purityPct: 90, micMin: 0.5, micMax: 64, fixed: false, axis: 'column', partnerName: 'Avibactam', partnerMainParts: 4, partnerParts: 1, partnerPurityPct: 98, partnerMode: 'together', partnerSplitPct: split },
+      { id: 2, name: 'Gentamicin', powderMg: 10, dissolveVolMl: 5, purityPct: 100, micMin: 0.25, micMax: 8, fixed: false, axis: 'row' },
+    ];
+    const p = planExperiment(abs, { ...DEFAULT_SETTINGS, numPlates: 3, stockScheme: 'auto' });
+    const m = p.abResults[0];
+    const pre = m.partner.pre;
+    assert.ok(pre, 'pre-primary block exists');
+    const sp = split ?? 50;
+    near(pre.partVolMl / pre.totalMl, sp / 100, 1e-12, 'partner share of volume');
+    near(pre.mainVolMl + pre.partVolMl, 10, 1e-12, 'volumes add to the Primary volume');
+    // mass balance: active drug weighed = concentration x volume of each pre-primary
+    near((pre.mainConc * pre.mainVolMl) / 1000, 40 * 0.9, 1e-9, 'ceftazidime active mg');
+    near((pre.partConc * pre.partVolMl) / 1000, (40 * 0.9) / 4, 1e-9, 'avibactam active mg');
+    near(m.partner.weighMg * 0.98, (40 * 0.9) / 4, 1e-9, 'avibactam powder to weigh');
+    // mixing the two gives the Primary
+    near((pre.mainConc * pre.mainVolMl) / pre.totalMl, m.primaryStock, 1e-9, 'main Primary');
+    near((pre.partConc * pre.partVolMl) / pre.totalMl, m.partner.primaryStock, 1e-9, 'partner Primary');
+    near(m.partner.primaryStock / m.primaryStock, 0.25, 1e-12, 'ratio is kept in the Primary');
+    const q = p.displayResults[1];
+    assert.equal(q.isPartner, true);
+    near(q.pre.partConc, pre.partConc, 1e-12, 'partner result carries its pre-primary');
+  }
+});
+
+test('Separate mode has no pre-primary; every display result is finite', () => {
+  const mk = (mode, fixedMain) => [
+    { id: 1, name: 'Ampicillin', powderMg: 25.6, dissolveVolMl: 5, purityPct: 100, micMin: 0.5, micMax: 64, fixed: !!fixedMain, fixedConc: 8, axis: fixedMain ? 'fixed' : 'column', partnerName: 'Sulbactam', partnerMainParts: 2, partnerParts: 1, partnerPurityPct: 100, partnerMode: mode },
+    { id: 2, name: 'Gentamicin', powderMg: 10, dissolveVolMl: 5, purityPct: 100, micMin: 0.25, micMax: 8, fixed: false, axis: 'row' },
+    { id: 3, name: 'Meropenem', powderMg: 25, dissolveVolMl: 5, purityPct: 100, micMin: 0.125, micMax: 16, fixed: false, axis: 'column' },
+  ];
+  const finite = (o, path = '') => {
+    if (typeof o === 'number') assert.ok(Number.isFinite(o), `non-finite number at ${path}`);
+    else if (Array.isArray(o)) o.forEach((x, i) => finite(x, `${path}[${i}]`));
+    else if (o && typeof o === 'object') for (const [k, v] of Object.entries(o)) finite(v, `${path}.${k}`);
+  };
+  for (const mode of ['together', 'separate']) {
+    for (const fixedMain of [false, true]) {
+      const abs = fixedMain ? mk(mode, true).slice(0, 2) : mk(mode, false).slice(0, 2);
+      const p = planExperiment(abs, { ...DEFAULT_SETTINGS, numPlates: 2, stockScheme: 'auto' });
+      const m = p.abResults[0];
+      assert.equal(!!m.partner.pre, mode === 'together', `${mode} fixed=${fixedMain}`);
+      p.displayResults.forEach((r, i) => finite({ ...r, ladder: r.ladder }, `display[${i}]`));
+    }
+  }
 });

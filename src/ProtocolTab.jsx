@@ -5,10 +5,11 @@ import { buildPlanPdf } from './pdfPlan.js';
 import { assignTubes, opentronsScript, worklist } from './robot.js';
 
 export default function ProtocolTab({ plan, cfg, capacity }) {
-  const titrated = plan.abResults.filter((r) => r.type === 'variable' && r.ladder);
-  const fixed = plan.abResults.filter((r) => r.type === 'fixed');
+  const titrated = plan.displayResults.filter((r) => r.type === 'variable' && r.ladder && !(r.isPartner && r.coDissolved));
+  const fixed = plan.displayResults.filter((r) => r.type === 'fixed' && !(r.isPartner && r.coDissolved));
   const blocked = plan.messages.some((m) => m.level === 'error');
-  const canRobot = plan.colRes?.ladder && plan.rowRes?.ladder;
+  const sepPartner = plan.abResults.some((r) => r.partner?.mode === 'separate');
+  const canRobot = plan.colRes?.ladder && plan.rowRes?.ladder && !sepPartner;
   const rack = canRobot ? assignTubes(plan, cfg) : null;
   const rr = planReservoirLoading(plan, cfg);
   let n = 0;
@@ -34,6 +35,11 @@ export default function ProtocolTab({ plan, cfg, capacity }) {
             The plan has unresolved problems; fix them before using the exported files.
           </div>
         )}
+        {sepPartner && (
+          <div style={{ marginTop: 8, fontSize: 12, color: '#92400e', lineHeight: 1.6 }}>
+            Liquid-handler files are not available when a partner is prepared as separate parallel stocks (the worklist would leave the partner out). Use the PDF or the protocol, or choose pre-primary stocks mixed into one Primary.
+          </div>
+        )}
         {canRobot && (
           <div style={{ marginTop: 8, fontSize: 12, color: '#6b7280', lineHeight: 1.6 }}>
             The worklist lists every dispense (source tube and rack position, destination well, volume). The Opentrons
@@ -53,10 +59,28 @@ export default function ProtocolTab({ plan, cfg, capacity }) {
         <div style={S.step}>
           <b>{num()}. Weigh and dissolve</b>
           <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 13 }}>
-            {plan.abResults.map((r) => (
-              <li key={r.id}>
-                ☐ {r.name}: {r.powderMg} mg in {r.dissolveVolMl} mL → {r.primaryStock ? fmtConc(r.primaryStock) : '—'} µg/mL
-                {r.powderUsedMg != null ? ` (about ${fmt(r.powderUsedMg, 1)} mg used)` : ''}
+            {plan.displayResults.map((r) => {
+              const pre = r.isPartner ? r.pre : r.partner?.pre;
+              if (pre) {
+                const mine = r.isPartner;
+                return (
+                  <li key={r.id}>
+                    ☐ Pre-primary {r.name}: {mine ? fmt(r.powderMg, 1) : r.powderMg} mg{mine ? ` (potency ${r.purityPct}%)` : ''} in its own tube, dissolved in {fmt(mine ? pre.partVolMl : pre.mainVolMl, 2)} mL → {fmtConc(mine ? pre.partConc : pre.mainConc)} µg/mL
+                    {mine ? ` · partner of ${r.mainName}, ratio ${r.ratioText}` : ''}
+                  </li>
+                );
+              }
+              return (
+                <li key={r.id}>
+                  ☐ {r.name}: {r.isPartner ? fmt(r.powderMg, 1) : r.powderMg} mg in {r.dissolveVolMl} mL → {r.primaryStock ? fmtConc(r.primaryStock) : '—'} µg/mL
+                  {r.powderUsedMg != null ? ` (about ${fmt(r.powderUsedMg, 1)} mg used)` : ''}
+                  {r.isPartner ? ` · partner of ${r.mainName}, ratio ${r.ratioText}, potency ${r.purityPct}%` : ''}
+                </li>
+              );
+            })}
+            {plan.abResults.filter((r) => r.partner?.pre).map((r) => (
+              <li key={'mix' + r.id}>
+                ☐ Mix {fmt(r.partner.pre.mainVolMl, 2)} mL {r.name} pre-primary + {fmt(r.partner.pre.partVolMl, 2)} mL {r.partner.name} pre-primary = {fmt(r.partner.pre.totalMl, 2)} mL <b>Primary</b> ({r.name} {fmtConc(r.primaryStock)}, {r.partner.name} {fmtConc(r.partner.primaryStock)} µg/mL; about {fmt(r.powderUsedMg, 1)} + {fmt(r.partner.usedMg, 1)} mg used)
               </li>
             ))}
           </ul>
@@ -64,7 +88,14 @@ export default function ProtocolTab({ plan, cfg, capacity }) {
 
         {titrated.map((r) => (
           <div key={r.id} style={S.step}>
-            <b>{num()}. {r.name}: stocks and tubes</b>
+            <b>{num()}. {r.name}: stocks and tubes</b>{r.isPartner ? ` (partner of ${r.mainName}, separate parallel stocks)` : ''}
+            {r.partner && (
+              <div style={{ fontSize: 12, color: '#374151', marginTop: 4 }}>
+                {r.partner.mode === 'separate'
+                  ? <>☐ Combination product, separate stocks: dissolve <b>{fmt(r.partner.weighMg, 1)} mg {r.partner.name}</b> apart from the {r.powderMg} mg {r.name} (ratio {r.partner.parts}); repeat every stock dilution for the partner with the same volumes, and add the same volume from both stocks to each tube. Concentrations below are of {r.name}; {r.partner.name} is {fmt(r.partner.f * 100, 0)}% of each.</>
+                  : <>☐ Combination product (ratio {r.partner.parts}): the two pre-primaries from step 1 are mixed into one Primary, which then carries both drugs. Concentrations below are of {r.name}; {r.partner.name} is {fmt(r.partner.f * 100, 0)}% of each.</>}
+              </div>
+            )}
             <ul style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 13 }}>
               {r.ladder.stocks.slice(1).map((s) => (
                 <li key={s.name}>
@@ -74,7 +105,7 @@ export default function ProtocolTab({ plan, cfg, capacity }) {
               {r.ladder.falcons.map((f) => (
                 <li key={f.falconIdx}>
                   ☐ Tube {r.axis === 'row' ? String.fromCharCode(64 + f.falconIdx) : f.falconIdx} ({fmtConc(f.finalConc)} µg/mL final, {fmtConc(f.concInFalcon)} in tube):{' '}
-                  {f.volFromStock_uL >= 900 ? `${fmt(f.volFromStock_mL, 2)} mL` : `${fmt(f.volFromStock_uL, 1)} µL`} {f.stockName} + {fmt(f.camhb_mL, 2)} mL CAMHB = {fmt(f.totalMl, 1)} mL
+                  {f.volFromStock_uL >= 900 ? `${fmt(f.volFromStock_mL, 2)} mL` : `${fmt(f.volFromStock_uL, 1)} µL`} {f.stockName}{r.isPartner ? ` into the same tube as ${r.mainName} (no extra CAMHB)` : ` + ${fmt(f.camhb_mL, 2)} mL CAMHB = ${fmt(f.totalMl, 1)} mL`}{r.partner ? ` (contains ${r.partner.name} ${fmtConc(f.partnerInFalcon)} µg/mL)` : ''}
                 </li>
               ))}
             </ul>

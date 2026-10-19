@@ -117,6 +117,7 @@ export function buildStockLadder({
   minStockMl = 1,
   tubeMl = 50,
   scheme = 'auto',
+  maxTakeFraction = MAX_TAKE_FRACTION,
 }) {
   const issues = [];
   const falconConcs = series.map((s) => (s * plateVol) / volAbPerWellEach);
@@ -229,7 +230,7 @@ export function buildStockLadder({
       const fc = falconConcs[i];
       const parent = chain[cur].conc;
       const cMax = (fc * V * 1000) / minVolUl; // the tube must take ≥ minVolUl
-      const cMin = fc / MAX_TAKE_FRACTION; // and at most 80% of its volume
+      const cMin = fc / maxTakeFraction; // and at most 80% of its volume (40% per component when two parallel stocks are mixed)
       const options = NICE_D.filter((D) => parent / D <= cMax * (1 + 1e-9) && parent / D >= cMin * (1 - 1e-9))
         .sort((a, b) => b - a)
         .map((D) => ({ conc: parent / D, from: cur }));
@@ -326,7 +327,8 @@ export function brothBreakdown(plan) {
   let tubes = 0;
   plan.abResults.forEach((r) => {
     if (r.ladder) {
-      r.ladder.stocks.slice(1).forEach((st) => { stocks += st.camhb_mL || 0; });
+      const m = r.partner?.mode === 'separate' ? 2 : 1; // a parallel partner ladder needs its own diluent
+      r.ladder.stocks.slice(1).forEach((st) => { stocks += (st.camhb_mL || 0) * m; });
       r.ladder.falcons.forEach((f) => { tubes += f.camhb_mL || 0; });
     }
   });
@@ -344,6 +346,69 @@ function powderNeededMg(volMl, primaryStock, purityPct) {
  * @param abs array of antibiotic definitions (see DEFAULT_ABS in App.jsx)
  * @param s   settings (see DEFAULT_SETTINGS)
  */
+
+/**
+ * A partner (for example sulbactam in ampicillin–sulbactam) is a chemical in its own right: it is weighed,
+ * dissolved, diluted and pipetted. This builds a drug-like result for it from the main drug's plan so
+ * that the stock cards, the diagram, the PDF, the protocol and the CSV can treat it like any other drug.
+ * together: the partner is carried in the main drug's tubes (coDissolved); separate: its own parallel stocks.
+ */
+export function makePartnerResult(r) {
+  const p = r.partner;
+  if (!p) return null;
+  const co = p.mode === 'together';
+  const f = p.f;
+  const out = {
+    id: r.id + 'p',
+    isPartner: true,
+    partnerOf: r.name,
+    mainId: r.id,
+    coDissolved: co,
+    name: p.name,
+    type: r.type,
+    axis: r.axis,
+    mode: p.mode,
+    ratioText: p.parts,
+    f,
+    powderMg: p.weighMg != null ? p.weighMg : r.powderMg,
+    purityPct: r.partnerPurityPct,
+    dissolveVolMl: r.dissolveVolMl,
+    primaryStock: p.primaryStock,
+    powderUsedMg: p.usedMg,
+    series: r.series ? r.series.map((x) => x * f) : undefined,
+    wellsPerConc: r.wellsPerConc,
+    workVolMl: r.workVolMl,
+    volWarning: null,
+    mainName: r.name,
+    pre: p.pre,
+  };
+  if (r.type === 'fixed') {
+    out.finalConc = r.partnerFinalConc;
+    out.concInBacSusp = r.concInBacSusp != null ? r.concInBacSusp * f : undefined;
+    out.volNeededFromPrimaryMl = co ? r.volNeededFromPrimaryMl : p.drawMl;
+    return out;
+  }
+  if (r.ladder) {
+    out.ladder = {
+      ...r.ladder,
+      stocks: r.ladder.stocks.map((st) => ({ ...st, conc: st.conc * f })),
+      falcons: r.ladder.falcons.map((fa) => ({
+        ...fa,
+        finalConc: fa.finalConc * f,
+        concInFalcon: fa.concInFalcon * f,
+        stockConc: fa.stockConc * f,
+        camhb_mL: 0, // the partner is added to the same working tube as the main drug; the broth is listed there
+      })),
+    };
+  }
+  return out;
+}
+
+/** Plan results for display: every main drug followed by its partner, if any. */
+export function withPartners(abResults) {
+  return abResults.flatMap((r) => (r.partner ? [r, makePartnerResult(r)] : [r]));
+}
+
 export function planExperiment(abs, s) {
   const messages = []; // {level: 'error' | 'warning', text, abId?}
   const add = (level, text, abId) => messages.push({ level, text, abId });
@@ -374,7 +439,7 @@ export function planExperiment(abs, s) {
         (num(s.inocDeadMl) || s.deadMl)
     );
 
-  const abResults = abs.map((ab0) => {
+  const abResults0 = abs.map((ab0) => {
     // CLSI scheme: the user gives the pack size (mg in the vial); the tool dissolves
     // the whole vial so that the primary stock is 10× the highest tube (1 + 9, Table 8A).
     let ab = ab0;
@@ -487,6 +552,10 @@ export function planExperiment(abs, s) {
       );
     }
 
+    const separate = !!(ab.partnerName || '').trim() && num(ab.partnerParts) > 0 && ab.partnerMode === 'separate';
+    if (separate && s.stockScheme === 'clsi') {
+      add('warning', `${name}: parallel stocks of the partner need the automatic ladder (the CLSI pattern fills the whole tube); the automatic ladder is used for this drug.`, ab.id);
+    }
     let ladder = null;
     let volWarning = null;
     if (series.length && primaryStock) {
@@ -499,7 +568,8 @@ export function planExperiment(abs, s) {
         minVolUl: s.minVolUl,
         minStockMl: s.minStockMl,
         tubeMl: s.tubeMl,
-        scheme: s.stockScheme,
+        scheme: separate ? 'auto' : s.stockScheme,
+        maxTakeFraction: separate ? MAX_TAKE_FRACTION / 2 : MAX_TAKE_FRACTION,
       });
       ladder.issues.forEach((t) => add('error', `${name}: ${t}`, ab.id));
       const needed = ladder.totalFromPrimary_mL;
@@ -542,6 +612,54 @@ export function planExperiment(abs, s) {
     };
   });
 
+  // Combination products with a partner at a fixed ratio (for example ampicillin:sulbactam 2:1).
+  // The two powders are dissolved together, so the partner follows the same ladder and the same
+  // volumes; the partner's concentration is the main concentration times f = partner parts / main parts.
+  const abResults = abResults0.map((r) => {
+    const name = (r.partnerName || '').trim();
+    const f = num(r.partnerParts) / num(r.partnerMainParts);
+    if (!name || !(f > 0) || !Number.isFinite(f)) return r;
+    const potM = num(r.purityPct) / 100;
+    const potP = (num(r.partnerPurityPct) || 100) / 100;
+    const toPartnerMg = (mainMg) => (mainMg * potM * f) / potP;
+    const mode = r.partnerMode === 'separate' ? 'separate' : 'together';
+    const partner = {
+      name,
+      mode,
+      f,
+      primaryStock: r.primaryStock ? r.primaryStock * f : null,
+      parts: `${num(r.partnerMainParts)}:${num(r.partnerParts)}`,
+      weighMg: num(r.powderMg) > 0 ? toPartnerMg(num(r.powderMg)) : null,
+      usedMg: r.powderUsedMg != null ? toPartnerMg(r.powderUsedMg) : null,
+    };
+    if (mode === 'together' && num(r.dissolveVolMl) > 0 && partner.primaryStock && r.primaryStock) {
+      // Pre-primary stocks: each powder is dissolved on its own; the two solutions are then mixed to make the Primary.
+      const V = num(r.dissolveVolMl);
+      const split = Math.min(95, Math.max(5, num(r.partnerSplitPct) || 50));
+      const partVolMl = (V * split) / 100;
+      const mainVolMl = V - partVolMl;
+      partner.pre = {
+        splitPct: split, totalMl: V, mainVolMl, partVolMl,
+        mainConc: (r.primaryStock * V) / mainVolMl,
+        partConc: (partner.primaryStock * V) / partVolMl,
+      };
+    }
+    if (r.ladder) {
+      r.ladder.stocks.forEach((st) => { st.partnerConc = st.conc * f; });
+      r.ladder.falcons.forEach((fa) => {
+        fa.partnerFinal = fa.finalConc * f;
+        fa.partnerInFalcon = fa.concInFalcon * f;
+        if (mode === 'separate') {
+          // the partner stock is diluted in parallel: the same volume is taken from it, so the broth shrinks
+          fa.partnerDrawMl = fa.volFromStock_mL;
+          fa.camhb_mL -= fa.partnerDrawMl;
+        }
+      });
+    }
+    if (mode === 'separate' && r.type === 'fixed' && r.volNeededFromPrimaryMl) partner.drawMl = r.volNeededFromPrimaryMl;
+    return { ...r, partner, partnerFinalConc: r.finalConc != null ? r.finalConc * f : undefined };
+  });
+
   // Layout checks (zero-drug row/column is added automatically).
   const colRes = abResults.find((r) => r.type === 'variable' && r.axis === 'column');
   const rowRes = abResults.find((r) => r.type === 'variable' && r.axis === 'row');
@@ -565,7 +683,7 @@ export function planExperiment(abs, s) {
   const volMcFarlandMl = dilFactor * bacVolMl;
   const fixedVolMl = abResults
     .filter((r) => r.type === 'fixed')
-    .reduce((a, r) => a + (r.volNeededFromPrimaryMl || 0), 0);
+    .reduce((a, r) => a + (r.volNeededFromPrimaryMl || 0) + (r.partner?.drawMl || 0), 0);
   const camhbForBacMl = bacVolMl - volMcFarlandMl - fixedVolMl;
   if (dilFactor >= 1) {
     add('error', 'Target inoculum is higher than the McFarland stock; check the CFU values.');
@@ -588,6 +706,7 @@ export function planExperiment(abs, s) {
     volBacPerWell,
     bacVolMl,
     abResults,
+    displayResults: withPartners(abResults),
     dilFactor,
     volMcFarlandMl,
     camhbForBacMl,
@@ -608,13 +727,7 @@ export function planCapacity(abs, s, maxN = 500) {
   const broth = num(s.camhbAvailMl) || 0;
   const probe = (n) => {
     const p = planExperiment(abs, { ...s, numPlates: n });
-    let camhb = p.camhbForBacMl || 0;
-    p.abResults.forEach((r) => {
-      if (r.ladder) {
-        r.ladder.stocks.slice(1).forEach((st) => { camhb += st.camhb_mL || 0; });
-        r.ladder.falcons.forEach((f) => { camhb += f.camhb_mL || 0; });
-      }
-    });
+    const camhb = brothBreakdown(p).total;
     const limits = {};
     p.abResults.forEach((r) => {
       limits['powder:' + r.id] = !r.volWarning;

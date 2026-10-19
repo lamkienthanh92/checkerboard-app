@@ -14,31 +14,32 @@ export function toCsv(rows) {
 /** One row per working tube plus one row per intermediate stock. */
 export function planCsv(plan) {
   const rows = [
-    ['drug', 'role', 'item', 'final_conc_ug_per_mL', 'tube_conc_ug_per_mL', 'source', 'take_uL', 'diluent_uL', 'total_uL'],
+    ['drug', 'role', 'item', 'final_conc_ug_per_mL', 'tube_conc_ug_per_mL', 'source', 'take_uL', 'diluent_uL', 'total_uL', 'partner_of'],
   ];
-  for (const r of plan.abResults) {
+  for (const r of plan.displayResults) {
     if (r.type === 'fixed') {
-      rows.push([r.name, 'fixed', 'add to inoculum', r.finalConc, '', 'Primary', r.volNeededFromPrimaryMl ? +(r.volNeededFromPrimaryMl * 1000).toFixed(2) : '', '', '']);
+      rows.push([r.name, r.isPartner ? 'partner, fixed' : 'fixed', 'add to inoculum', r.finalConc, '', r.isPartner && r.coDissolved ? `in ${r.mainName} primary` : 'Primary', r.volNeededFromPrimaryMl ? +(r.volNeededFromPrimaryMl * 1000).toFixed(2) : '', '', '', r.partnerOf || '']);
       continue;
     }
     if (!r.ladder) continue;
     r.ladder.stocks.forEach((s, i) => {
       rows.push([
         r.name,
-        r.axis,
+        r.isPartner ? `partner, ${r.axis}` : r.axis,
         `stock ${s.name}`,
         '',
         +s.conc.toPrecision(4),
-        i === 0 ? 'powder' : r.ladder.stocks[s.fromStockIdx].name,
+        r.isPartner && r.coDissolved ? `in ${r.mainName} stock` : i === 0 ? 'powder' : r.ladder.stocks[s.fromStockIdx].name,
         i === 0 ? '' : +s.fromPrev_uL.toFixed(2),
         i === 0 ? '' : +(s.camhb_mL * 1000).toFixed(2),
         i === 0 ? '' : +(s.volNeeded_mL * 1000).toFixed(1),
+        r.partnerOf || '',
       ]);
     });
     r.ladder.falcons.forEach((f) => {
       rows.push([
         r.name,
-        r.axis,
+        r.isPartner ? `partner, ${r.axis}` : r.axis,
         `tube ${r.axis === 'row' ? String.fromCharCode(64 + f.falconIdx) : f.falconIdx}`,
         f.finalConc,
         +f.concInFalcon.toPrecision(4),
@@ -46,6 +47,7 @@ export function planCsv(plan) {
         +f.volFromStock_uL.toFixed(2),
         +(f.camhb_mL * 1000).toFixed(1),
         +(f.totalMl * 1000).toFixed(0),
+        r.partnerOf || '',
       ]);
     });
   }

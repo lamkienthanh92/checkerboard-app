@@ -7,9 +7,10 @@ A React + Vite tool for planning, running and analysing broth-microdilution **ch
 
 | Tab / area | What it does |
 | --- | --- |
-| Plate and batch, Antibiotics, Inoculum | Inputs; the plan recalculates as you type and flags problems (drug shortage, tube too small, layout limits, sub-minimum pipetting volumes). The number of plates is not an input: the tool re-plans for 1, 2, 3 … plates and uses the largest number that the weighed powder, tube size and (optional) broth can supply. |
+| Plate and batch, Antibiotics, Inoculum settings | Inputs, opened as movable windows from icons under the main view (plate layout or flow diagram; clicking a drug, stock or the inoculum opens its window). Every option and numeric field has a small picture. The plan recalculates as you type and flags problems. the plan recalculates as you type and flags problems (drug shortage, tube too small, layout limits, sub-minimum pipetting volumes). The number of plates is not an input: the tool re-plans for 1, 2, 3 … plates and uses the largest number that the weighed powder, tube size and (optional) broth can supply. |
 | Summary | Largest number of plates, the limiting resource, and what to prepare: powder per drug, total CAMHB (tubes, stocks, inoculum), McFarland volume, inoculum volume including the liquid left in a Petri dish or trough. |
 | Stocks & tubes | Stock ladder (Primary → Secondary → Tertiary …) so every working tube is made with at least the minimum pipetting volume; tube volumes sized from plates × wells × volume + overage + dead volume; powder needed vs. available. |
+| Combination products | Partner at a fixed ratio, co-dissolved and shown in tables, PDF and CSV (presets: ampicillin–sulbactam 2:1, amoxicillin–clavulanate 2:1, piperacillin–tazobactam 8:1, ceftazidime–avibactam 4:1, ceftolozane–tazobactam 2:1, imipenem–relebactam 2:1, meropenem–vaborbactam 1:1, trimethoprim–sulfamethoxazole 1:19); the partner is weighed and dissolved on its own as a pre-primary stock and mixed with the main drug's pre-primary stock into one Primary stock (the share of the Primary volume is set by the user), or made as separate parallel stocks with the same dilution steps (for powders that need different solvents); step-by-step stock instructions, diagram labels, PDF and CSV include the partner. Alternatively a fixed-concentration inhibitor can be added as a fixed drug. Ratios are formulation ratios; check them against the product label and your protocol. |
 | Inoculum | McFarland dilution including fixed-drug volume. |
 | Plate layout | 8 × 12 map: drug-free row/column, drug-alone wells, growth control; loading with 12-well reagent reservoirs and a multichannel pipette (pour volumes, passes, fills). |
 | Diagram | Stock → tube → plate flow. |
@@ -29,7 +30,7 @@ A React + Vite tool for planning, running and analysing broth-microdilution **ch
 ```bash
 npm ci            # or: npm install
 npm run dev      # development
-npm test         # 52 tests: calculation, analysis, export, robot, simulation, and verification of Tables 1 and 2
+npm test         # 60 tests: calculation, analysis, export, robot, simulation, and verification of Table 1 and Table S1
 npm run build    # production build
 ```
 
@@ -53,4 +54,4 @@ variability are not simulated. Replace the error model with your pipettes' speci
 
 ## License and citation
 
-MIT License (see LICENSE). Cite via CITATION.cff; the archived versions are on Zenodo (concept DOI 10.5281/zenodo.23312282 is version 1; add the DOI of version 1.3.0 here after archiving).
+MIT License (see LICENSE). Cite via CITATION.cff; the archived versions are on Zenodo (version 1.3.0: https://doi.org/10.5281/zenodo.23453459; add the DOI of 1.4.0 after archiving; all versions: https://doi.org/10.5281/zenodo.23312281).
